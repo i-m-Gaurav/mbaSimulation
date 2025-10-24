@@ -49,4 +49,8 @@ export const Endpoints = {
   login: "/api/users/login",
   signup: "/api/users/signup",
   profile: "/api/users/getProfile",
+  configGet: "/api/config/getConfig",
+  simulationCreate: "/api/simulations",
+  simulationUpdate: "/api/simulations/",
+  ordersCreate: "/api/orders",
 } as const;

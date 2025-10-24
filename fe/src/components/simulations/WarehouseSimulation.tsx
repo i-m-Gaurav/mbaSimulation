@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Package,
   HelpCircle,
@@ -10,8 +10,20 @@ import {
 } from "lucide-react";
 import { FactoryProductionMethod } from "./FactoryProductionMethod";
 import { ExtraAdditions } from "./ExtraAdditions";
+import { Modal } from "../auth/Modal";
+import { apiFetch, Endpoints } from "../../utils/api";
 
-export function WarehouseSimulation() {
+type ConfigSettings = {
+  quantityRange: [number, number];
+  qualityRange: [number, number];
+  priceStops: number[];
+};
+
+interface WarehouseSimulationProps {
+  onSubmitted?: () => void;
+}
+
+export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   const [quantity, setQuantity] = useState(4500);
   const [qualityRating, setQualityRating] = useState(50); // 10 - 60 range per spec (steps of 10)
   const [qualityZone] = useState(50);
@@ -20,20 +32,249 @@ export function WarehouseSimulation() {
   const [fulfillmentMethod, setFulfillmentMethod] = useState("batches");
   const [addBuffer, setAddBuffer] = useState(false);
   const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [config, setConfig] = useState<ConfigSettings | null>(null);
+  const [simulationId, setSimulationId] = useState<string | null>(
+    () => window.localStorage.getItem("simulationId") || null
+  );
+  type Station = "preparation" | "assembly" | "completion" | "inspection";
+  const [productionMode, setProductionMode] = useState<"one" | "all">("one");
+  const [factoryAssignments, setFactoryAssignments] = useState<
+    Record<string, Station | null>
+  >({
+    "1": null,
+    "2": null,
+    "3": null,
+    "4": null,
+    "5": null,
+    "6": null,
+  });
+  const [allStationsEmployeeIds, setAllStationsEmployeeIds] = useState<
+    string[]
+  >([]);
+  const [selectedAddOnIds, setSelectedAddOnIds] = useState<string[]>([]);
+  const toggleAddOn = (id: string) => {
+    setSelectedAddOnIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+  const [showSubmittedModal, setShowSubmittedModal] = useState(false);
+
+  const fetchConfig = async () => {
+    const res = await apiFetch<ConfigSettings>(Endpoints.configGet);
+    if (res.data) {
+      setConfig(res.data);
+      // After config arrives, clamp existing selections to valid ranges
+      const [qMin, qMax] = res.data.quantityRange ?? [1000, 6000];
+      const [qualMin, qualMax] = res.data.qualityRange ?? [10, 60];
+      const stops = res.data.priceStops?.length
+        ? res.data.priceStops
+        : [10, 11, 13, 16, 20, 25];
+      const step =
+        stops.length > 1 ? (qualMax - qualMin) / (stops.length - 1) : 10;
+
+      setQuantity((prev) => Math.min(qMax, Math.max(qMin, prev)));
+      // Snap quality to the nearest legal step within range
+      setQualityRating((prev) => {
+        const clamped = Math.min(qualMax, Math.max(qualMin, prev));
+        const idx = Math.round((clamped - qualMin) / step);
+        const snapped = qualMin + idx * step;
+        return Math.round(snapped);
+      });
+    } else if (res.error) {
+      // Fallbacks will be used
+      console.error("Error fetching config:", res.error);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      fetchConfig();
+    } catch (error) {
+      console.error("Error fetching config:", error);
+    }
+  }, []);
+
+  // Save warehouse data to backend (create or update a simulation)
+  const saveWarehouse = async () => {
+    const warehouseData = {
+      quantity,
+      qualityRating,
+      pricePerUnit,
+      additionalOption,
+      deliveryMethod,
+      fulfillmentMethod,
+      addBuffer,
+    };
+
+    try {
+      if (!simulationId) {
+        const res = await apiFetch<{ _id: string }>(
+          Endpoints.simulationCreate,
+          {
+            method: "POST",
+            body: JSON.stringify({ warehouseData }),
+          }
+        );
+        if (res.data && (res.data as unknown as { _id?: string })._id) {
+          const id = (res.data as unknown as { _id?: string })._id as string;
+          setSimulationId(id);
+          window.localStorage.setItem("simulationId", id);
+          console.log("Created simulation", id);
+        } else {
+          console.error("Failed creating simulation", res.error);
+        }
+      } else {
+        const res = await apiFetch(Endpoints.simulationUpdate + simulationId, {
+          method: "PUT",
+          body: JSON.stringify({ warehouseData }),
+        });
+        if (res.error) console.error("Failed updating simulation", res.error);
+        else console.log("Updated simulation", simulationId);
+      }
+    } catch (err) {
+      console.error("Error saving warehouse data", err);
+    }
+  };
+
+  // Save factory data (assignments + production mode) to backend
+  const saveFactory = async () => {
+    const factoryData = {
+      productionMode,
+      assignments: factoryAssignments,
+      allStationsEmployeeIds,
+    };
+
+    try {
+      if (!simulationId) {
+        // Create a new simulation if missing (edge case)
+        const res = await apiFetch<{ _id: string }>(
+          Endpoints.simulationCreate,
+          {
+            method: "POST",
+            body: JSON.stringify({ factoryData }),
+          }
+        );
+        if (res.data && (res.data as unknown as { _id?: string })._id) {
+          const id = (res.data as unknown as { _id?: string })._id as string;
+          setSimulationId(id);
+          window.localStorage.setItem("simulationId", id);
+          console.log("Created simulation with factory data", id);
+        } else {
+          console.error("Failed creating simulation (factory)", res.error);
+        }
+      } else {
+        const res = await apiFetch(Endpoints.simulationUpdate + simulationId, {
+          method: "PUT",
+          body: JSON.stringify({ factoryData }),
+        });
+        if (res.error) console.error("Failed updating factory data", res.error);
+        else console.log("Updated factory data for simulation", simulationId);
+      }
+    } catch (err) {
+      console.error("Error saving factory data", err);
+    }
+  };
+
+  // Save extra additions selection to backend
+  const saveExtraAdditions = async () => {
+    const extraAdditions = { selectedAddOnIds };
+    try {
+      if (!simulationId) {
+        const res = await apiFetch<{ _id: string }>(
+          Endpoints.simulationCreate,
+          {
+            method: "POST",
+            body: JSON.stringify({ extraAdditions }),
+          }
+        );
+        if (res.data && (res.data as unknown as { _id?: string })._id) {
+          const id = (res.data as unknown as { _id?: string })._id as string;
+          setSimulationId(id);
+          window.localStorage.setItem("simulationId", id);
+          console.log("Created simulation with extra additions", id);
+        } else {
+          console.error(
+            "Failed creating simulation (extraAdditions)",
+            res.error
+          );
+        }
+      } else {
+        const res = await apiFetch(Endpoints.simulationUpdate + simulationId, {
+          method: "PUT",
+          body: JSON.stringify({ extraAdditions }),
+        });
+        if (res.error)
+          console.error("Failed updating extra additions", res.error);
+        else
+          console.log("Updated extra additions for simulation", simulationId);
+      }
+    } catch (err) {
+      console.error("Error saving extra additions", err);
+    }
+  };
+
+  // Create order details document on final submit
+  const createOrderDetails = async () => {
+    const spendingForecast = {
+      warehouseCost: Math.round(warehouseCost),
+      factoryCost: Math.round(factoryCost),
+      showroomCost: Math.round(showroomCost),
+      totalSpending: Math.round(totalSpending),
+    };
+    const payload = {
+      simulationId,
+      quantity,
+      qualityRating,
+      pricePerUnit,
+      timeToProduceWeeks: Number(timeToProduceWeeks.toFixed(1)),
+      potentialRevenue: Math.round(totalRevenue),
+      spendingForecast,
+    };
+    try {
+      const res = await apiFetch(Endpoints.ordersCreate, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (res.error) console.error("Failed to create order details", res.error);
+      else console.log("Order details saved");
+    } catch (err) {
+      console.error("Error creating order details", err);
+    }
+  };
 
   // Discrete mapping: Quality [10,20,30,40,50,60] -> Price [10,11,13,16,20,25]
-  const QUALITY_MIN = 10;
-  const QUALITY_MAX = 60;
-  const PRICE_STOPS = [10, 11, 13, 16, 20, 25] as const;
+  // Drive ranges and stops from backend config (fallback to defaults if not loaded)
+  const QUANTITY_MIN = config?.quantityRange?.[0] ?? 1000;
+  const QUANTITY_MAX = config?.quantityRange?.[1] ?? 6000;
+  const QUALITY_MIN = config?.qualityRange?.[0] ?? 10;
+  const QUALITY_MAX = config?.qualityRange?.[1] ?? 60;
+  const PRICE_STOPS = useMemo<number[]>(
+    () =>
+      config?.priceStops && config.priceStops.length
+        ? config.priceStops
+        : [10, 11, 13, 16, 20, 25],
+    [config?.priceStops]
+  );
+  const QUALITY_STEP = useMemo(() => {
+    return PRICE_STOPS.length > 1
+      ? (QUALITY_MAX - QUALITY_MIN) / (PRICE_STOPS.length - 1)
+      : 10;
+  }, [PRICE_STOPS, QUALITY_MAX, QUALITY_MIN]);
 
   const priceIndex = useMemo(() => {
     const clampedQ = Math.min(
       QUALITY_MAX,
       Math.max(QUALITY_MIN, qualityRating)
     );
-    const idx = Math.round((clampedQ - QUALITY_MIN) / 10);
-    return Math.max(0, Math.min(5, idx));
-  }, [qualityRating]);
+    const idx = Math.round((clampedQ - QUALITY_MIN) / QUALITY_STEP);
+    return Math.max(0, Math.min(PRICE_STOPS.length - 1, idx));
+  }, [
+    QUALITY_MAX,
+    QUALITY_MIN,
+    QUALITY_STEP,
+    qualityRating,
+    PRICE_STOPS.length,
+  ]);
 
   const pricePerUnit = PRICE_STOPS[priceIndex];
   const totalRevenue = quantity * pricePerUnit * (qualityZone / 50);
@@ -95,15 +336,15 @@ export function WarehouseSimulation() {
                     <div className="relative">
                       <input
                         type="range"
-                        min="1000"
-                        max="6000"
+                        min={QUANTITY_MIN}
+                        max={QUANTITY_MAX}
                         value={quantity}
                         onChange={(e) => setQuantity(parseInt(e.target.value))}
                         className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-corporate"
                       />
                       <div className="flex justify-between text-slate-500 text-sm mt-2">
-                        <span>1,000</span>
-                        <span>6,000</span>
+                        <span>{QUANTITY_MIN.toLocaleString()}</span>
+                        <span>{QUANTITY_MAX.toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
@@ -126,13 +367,13 @@ export function WarehouseSimulation() {
                         </div>
                       </div>
                     </div>
-                    {/* Quality slider (10 - 60) */}
+                    {/* Quality slider (from backend range) */}
                     <div className="relative mb-6">
                       <input
                         type="range"
                         min={QUALITY_MIN}
                         max={QUALITY_MAX}
-                        step={10}
+                        step={QUALITY_STEP}
                         value={qualityRating}
                         onChange={(e) =>
                           setQualityRating(parseInt(e.target.value))
@@ -145,7 +386,7 @@ export function WarehouseSimulation() {
                       </div>
                     </div>
 
-                    {/* Price slider (10, 11, 13, 16, 20, 25) linked to quality */}
+                    {/* Price slider (backend price stops) linked to quality */}
                     <div className="relative mb-4">
                       <input
                         type="range"
@@ -155,7 +396,10 @@ export function WarehouseSimulation() {
                         value={priceIndex}
                         onChange={(e) =>
                           setQualityRating(
-                            QUALITY_MIN + parseInt(e.target.value) * 10
+                            Math.round(
+                              QUALITY_MIN +
+                                parseInt(e.target.value) * QUALITY_STEP
+                            )
                           )
                         }
                         className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-corporate"
@@ -329,18 +573,50 @@ export function WarehouseSimulation() {
               </div>
             )}
 
-            {step === 1 && <FactoryProductionMethod />}
-            {step === 2 && <ExtraAdditions />}
+            {step === 1 && (
+              <FactoryProductionMethod
+                assignments={factoryAssignments}
+                onChange={setFactoryAssignments}
+                productionMode={productionMode}
+                onModeChange={setProductionMode}
+                allStationsEmployeeIds={allStationsEmployeeIds}
+                onToggleAllStations={(id) =>
+                  setAllStationsEmployeeIds((prev) =>
+                    prev.includes(id)
+                      ? prev.filter((x) => x !== id)
+                      : [...prev, id]
+                  )
+                }
+              />
+            )}
+            {step === 2 && (
+              <ExtraAdditions
+                selectedIds={selectedAddOnIds}
+                onToggle={toggleAddOn}
+              />
+            )}
 
             {/* Next Button */}
             <div className="flex justify-end">
               <button
-                onClick={() =>
-                  setStep((prev) => (prev < 2 ? ((prev + 1) as 0 | 1 | 2) : 2))
-                }
+                onClick={async () => {
+                  // Persist data before moving to the next step or submit on final step
+                  if (step === 0) await saveWarehouse();
+                  else if (step === 1) await saveFactory();
+                  else if (step === 2) {
+                    await saveExtraAdditions();
+                    await createOrderDetails();
+                    setShowSubmittedModal(true);
+                    setTimeout(() => {
+                      setShowSubmittedModal(false);
+                      onSubmitted?.();
+                    }, 1200);
+                  }
+                  setStep((prev) => (prev < 2 ? ((prev + 1) as 0 | 1 | 2) : 2));
+                }}
                 className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-lg hover:shadow-xl"
               >
-                {step < 2 ? "Next" : "Next"}
+                {step < 2 ? "Next" : "Submit"}
               </button>
             </div>
           </div>
@@ -465,6 +741,31 @@ export function WarehouseSimulation() {
           </div>
         </div>
       </div>
+      <Modal isOpen={showSubmittedModal} onClose={() => {}}>
+        <div className="p-6 text-center">
+          <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+            <svg
+              className="w-6 h-6 text-green-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-slate-800 mb-1">
+            Submitted
+          </h3>
+          <p className="text-slate-600 text-sm">
+            Your simulation choices and order details have been saved.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }
