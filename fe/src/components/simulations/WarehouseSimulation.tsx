@@ -24,9 +24,8 @@ interface WarehouseSimulationProps {
 }
 
 export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
-  const [quantity, setQuantity] = useState(4500);
+  const [quantity, setQuantity] = useState(100);
   const [qualityRating, setQualityRating] = useState(50); // 10 - 60 range per spec (steps of 10)
-  const [qualityZone] = useState(50);
   const [additionalOption, setAdditionalOption] = useState("buying-group");
   const [deliveryMethod, setDeliveryMethod] = useState("in-house");
   const [fulfillmentMethod, setFulfillmentMethod] = useState("batches");
@@ -277,7 +276,13 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   ]);
 
   const pricePerUnit = PRICE_STOPS[priceIndex];
-  const totalRevenue = quantity * pricePerUnit * (qualityZone / 50);
+
+  // Calculate total revenue based on quality tier average price
+  const averagePrice =
+    qualityRating >= 70
+      ? (80 + 100) / 2 // Premium: average of $80-$100 = $90
+      : (25 + 45) / 2; // Basic: average of $25-$45 = $35
+  const totalRevenue = quantity * averagePrice;
 
   const warehouseCost = quantity * 43.73;
   const factoryCost = quantity * 20.03;
@@ -338,6 +343,7 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
                         type="range"
                         min={QUANTITY_MIN}
                         max={QUANTITY_MAX}
+                        step={500}
                         value={quantity}
                         onChange={(e) => setQuantity(parseInt(e.target.value))}
                         className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-corporate"
@@ -367,19 +373,41 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
                         </div>
                       </div>
                     </div>
+
                     {/* Quality slider (from backend range) */}
                     <div className="relative mb-6">
-                      <input
-                        type="range"
-                        min={QUALITY_MIN}
-                        max={QUALITY_MAX}
-                        step={QUALITY_STEP}
-                        value={qualityRating}
-                        onChange={(e) =>
-                          setQualityRating(parseInt(e.target.value))
-                        }
-                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-corporate"
-                      />
+                      <div className="relative w-full">
+                        {/* Premium threshold marker box */}
+                        <div
+                          className="absolute -top-5 flex flex-col items-center pointer-events-none"
+                          style={{
+                            left: `${
+                              ((70 - QUALITY_MIN) /
+                                (QUALITY_MAX - QUALITY_MIN)) *
+                              100
+                            }%`,
+                            transform: "translateX(-50%)",
+                          }}
+                        >
+                          <div className="bg-red-100 border border-red-300 text-red-600 text-xs font-semibold px-2 py-0.5 rounded-md shadow-sm">
+                            Premium Zone
+                          </div>
+                          <div className="w-[2px] h-5 bg-red-400 rounded-full mt-1"></div>
+                        </div>
+
+                        <input
+                          type="range"
+                          min={QUALITY_MIN}
+                          max={QUALITY_MAX}
+                          step={QUALITY_STEP}
+                          value={qualityRating}
+                          onChange={(e) =>
+                            setQualityRating(parseInt(e.target.value))
+                          }
+                          className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-corporate"
+                        />
+                      </div>
+
                       <div className="flex justify-between text-slate-500 text-sm mt-2">
                         <span>{QUALITY_MIN}</span>
                         <span>{QUALITY_MAX}</span>
@@ -640,13 +668,27 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Quality</span>
-                  <span className="font-semibold text-slate-800">Premium</span>
+
+                  {qualityRating >= 70 ? (
+                    <>
+                      <span className="font-semibold text-slate-800">
+                        Premium
+                      </span>
+                    </>
+                  ) : (
+                    <span>
+                      <span className="font-semibold text-slate-800">
+                        Basic
+                      </span>
+                    </span>
+                  )}
+
+                  {/* <span className="font-semibold text-slate-800">Premium</span> */}
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Price</span>
                   <span className="font-semibold text-slate-800">
-                    ${Math.round((pricePerUnit * qualityZone) / 50)}-$
-                    {Math.round(((pricePerUnit * qualityZone) / 50) * 1.2)}
+                    {qualityRating >= 70 ? "$80-$100" : "$25-$45"}
                   </span>
                 </div>
               </div>

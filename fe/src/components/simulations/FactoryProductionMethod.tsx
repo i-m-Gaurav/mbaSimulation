@@ -85,10 +85,10 @@ const employees: Employee[] = [
 ];
 
 const stationTimes = {
-  preparation: { min: 4, max: 8 },
-  assembly: { min: 6, max: 8 },
-  completion: { min: 4, max: 8 },
-  inspection: { min: 3, max: 8 },
+  preparation: { min: 4, max: 5 },
+  assembly: { min: 6, max: 5 },
+  completion: { min: 4, max: 5 },
+  inspection: { min: 3, max: 5 },
 };
 
 export function FactoryProductionMethod({

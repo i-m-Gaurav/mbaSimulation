@@ -8,7 +8,13 @@ import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./hooks/useAuth";
 import { LoginModal } from "./components/auth/LoginModal";
 import { SignupModal } from "./components/auth/SignupModal";
-import { Routes, Route, useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 
 export type SimulationPage =
   | "warehouse"
@@ -123,19 +129,35 @@ function App() {
 }
 
 // Small route wrappers to extract params and render pages
-function SubjectRoute({ onNavigate }: { onNavigate: (nav: NavigationState) => void }) {
+function SubjectRoute({
+  onNavigate,
+}: {
+  onNavigate: (nav: NavigationState) => void;
+}) {
   const { subjectId = "" } = useParams();
   return <SubjectPage subjectId={subjectId} onNavigate={onNavigate} />;
 }
 
-function ConceptRoute({ onNavigate }: { onNavigate: (nav: NavigationState) => void }) {
+function ConceptRoute({
+  onNavigate,
+}: {
+  onNavigate: (nav: NavigationState) => void;
+}) {
   const { subjectId = "", conceptId = "" } = useParams();
   return (
-    <ConceptPage subjectId={subjectId} conceptId={conceptId} onNavigate={onNavigate} />
+    <ConceptPage
+      subjectId={subjectId}
+      conceptId={conceptId}
+      onNavigate={onNavigate}
+    />
   );
 }
 
-function SimulationRoute({ onNavigate }: { onNavigate: (nav: NavigationState) => void }) {
+function SimulationRoute({
+  onNavigate,
+}: {
+  onNavigate: (nav: NavigationState) => void;
+}) {
   const { simulationId = "" } = useParams();
   return <SimulationPage simulationId={simulationId} onNavigate={onNavigate} />;
 }
