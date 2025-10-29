@@ -23,6 +23,15 @@ interface WarehouseSimulationProps {
   onSubmitted?: () => void;
 }
 
+// Shared stations type/constant
+export type Station = "preparation" | "assembly" | "completion" | "inspection";
+const STATIONS: Station[] = [
+  "preparation",
+  "assembly",
+  "completion",
+  "inspection",
+];
+
 export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   const [quantity, setQuantity] = useState(100);
   const [qualityRating, setQualityRating] = useState(50); // 10 - 60 range per spec (steps of 10)
@@ -35,7 +44,6 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   const [simulationId, setSimulationId] = useState<string | null>(
     () => window.localStorage.getItem("simulationId") || null
   );
-  type Station = "preparation" | "assembly" | "completion" | "inspection";
   const [productionMode, setProductionMode] = useState<"one" | "all">("one");
   const [factoryAssignments, setFactoryAssignments] = useState<
     Record<string, Station | null>
@@ -50,6 +58,10 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   const [allStationsEmployeeIds, setAllStationsEmployeeIds] = useState<
     string[]
   >([]);
+  // Per-employee minutes per station, emitted from FactoryProductionMethod
+  const [factoryEmployeeTimes, setFactoryEmployeeTimes] = useState<
+    Record<string, Partial<Record<Station, number>>>
+  >({});
   const [selectedAddOnIds, setSelectedAddOnIds] = useState<string[]>([]);
   const toggleAddOn = (id: string) => {
     setSelectedAddOnIds((prev) =>
@@ -289,11 +301,61 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   const showroomCost = quantity * 1.4;
   const totalSpending = warehouseCost + factoryCost + showroomCost;
   const potentialProfit = totalRevenue - totalSpending;
+  // ---- Production time calculation based on selected employees (One Station focus) ----
 
-  const timeToProduceWeeks = Math.max(
-    6,
-    Math.min(10, 8 - (qualityRating - 80) / 10)
+  // Per-hour capacity by station (sum over employees assigned to that station)
+  const perHourByStation = useMemo(() => {
+    const acc: Record<Station, number> = {
+      preparation: 0,
+      assembly: 0,
+      completion: 0,
+      inspection: 0,
+    };
+
+    if (productionMode === "one") {
+      for (const empId of Object.keys(factoryEmployeeTimes)) {
+        const st = factoryAssignments[empId];
+        if (!st) continue;
+        const minutes = factoryEmployeeTimes[empId]?.[st];
+        if (minutes && minutes > 0) acc[st] += 60 / minutes;
+      }
+    } else {
+      // All-stations mode (basic support): employees in allStationsEmployeeIds contribute to all stations
+      for (const empId of allStationsEmployeeIds) {
+        for (const st of STATIONS) {
+          const minutes = factoryEmployeeTimes[empId]?.[st];
+          if (minutes && minutes > 0) acc[st] += 60 / minutes;
+        }
+      }
+    }
+    return acc;
+  }, [
+    factoryEmployeeTimes,
+    factoryAssignments,
+    productionMode,
+    allStationsEmployeeIds,
+  ]);
+
+  // Hours required per station to produce the target quantity
+  const hoursPerStation = useMemo(() => {
+    return STATIONS.map((st) => {
+      const perHour = perHourByStation[st];
+      return perHour > 0 ? quantity / perHour : 0;
+    });
+  }, [perHourByStation, quantity]);
+
+  // Weeks per station (5 days * 8 hours = 40 hours/week)
+  const weeksPerStation = useMemo(
+    () => hoursPerStation.map((h) => (h > 0 ? h / 40 : 0)),
+    [hoursPerStation]
   );
+
+  // Final time is the slowest station (max weeks)
+  const timeToProduceWeeks = useMemo(() => {
+    const active = weeksPerStation.filter((w) => w > 0);
+    if (!active.length) return 0;
+    return Math.max(...active);
+  }, [weeksPerStation]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8">
@@ -615,6 +677,8 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
                       : [...prev, id]
                   )
                 }
+                qualityRating={qualityRating}
+                onTimesChange={setFactoryEmployeeTimes}
               />
             )}
             {step === 2 && (
