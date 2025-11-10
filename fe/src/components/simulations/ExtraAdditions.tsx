@@ -22,7 +22,7 @@ const OPTIONS: ExtraAddOn[] = [
     name: "Technology improvement",
     image:
       "https://images.pexels.com/photos/356056/pexels-photo-356056.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop",
-    cost: 0.5,
+    cost: 2.50,
     benefit: "Buyer may pay up to 5% more",
   },
   {
@@ -30,7 +30,7 @@ const OPTIONS: ExtraAddOn[] = [
     name: "Customized flag add-on",
     image:
       "https://images.pexels.com/photos/259967/pexels-photo-259967.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop",
-    cost: 0.3,
+    cost: 0.50,
     benefit: "Buyer may pay up to 7% more",
   },
   {
@@ -38,7 +38,7 @@ const OPTIONS: ExtraAddOn[] = [
     name: "Upgraded performance insole",
     image:
       "https://images.pexels.com/photos/1598505/pexels-photo-1598505.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop",
-    cost: 1.5,
+    cost: 1.50,
     benefit: "Buyer may pay up to 7% more",
   },
 ];

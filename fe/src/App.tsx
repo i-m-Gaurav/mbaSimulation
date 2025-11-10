@@ -4,6 +4,7 @@ import { HomePage } from "./components/HomePage";
 import { SubjectPage } from "./components/SubjectPage";
 import { ConceptPage } from "./components/ConceptPage";
 import { SimulationPage } from "./components/SimulationPage";
+import { ResultsPage } from "./components/simulations/ResultsPage";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./hooks/useAuth";
 import { LoginModal } from "./components/auth/LoginModal";
@@ -106,6 +107,7 @@ function App() {
             path="/simulation/:simulationId"
             element={<SimulationRoute onNavigate={setNavigation} />}
           />
+          <Route path="/results" element={<ResultsPage />} />
         </Routes>
       </main>
       <LoginModal

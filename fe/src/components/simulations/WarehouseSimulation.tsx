@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Package,
   HelpCircle,
@@ -9,6 +10,7 @@ import {
   Target,
 } from "lucide-react";
 import { FactoryProductionMethod } from "./FactoryProductionMethod";
+import { employees as factoryEmployees } from "./data/employees";
 import { ExtraAdditions } from "./ExtraAdditions";
 import { Modal } from "../auth/Modal";
 import { apiFetch, Endpoints } from "../../utils/api";
@@ -33,13 +35,16 @@ const STATIONS: Station[] = [
 ];
 
 export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlStep = parseInt(searchParams.get("step") ?? "0", 10) as 0 | 1 | 2;
+
   const [quantity, setQuantity] = useState(100);
   const [qualityRating, setQualityRating] = useState(50); // 10 - 60 range per spec (steps of 10)
   const [additionalOption, setAdditionalOption] = useState("buying-group");
   const [deliveryMethod, setDeliveryMethod] = useState("in-house");
   const [fulfillmentMethod, setFulfillmentMethod] = useState("batches");
   const [addBuffer, setAddBuffer] = useState(false);
-  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [step, setStep] = useState<0 | 1 | 2>(urlStep);
   const [config, setConfig] = useState<ConfigSettings | null>(null);
   const [simulationId, setSimulationId] = useState<string | null>(
     () => window.localStorage.getItem("simulationId") || null
@@ -95,6 +100,17 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
       // Fallbacks will be used
       console.error("Error fetching config:", res.error);
     }
+  };
+
+  // Sync step state with URL query param
+  useEffect(() => {
+    setStep(urlStep);
+  }, [urlStep]);
+
+  // Update URL when step changes
+  const handleStepChange = (newStep: 0 | 1 | 2) => {
+    setStep(newStep);
+    setSearchParams({ step: newStep.toString() });
   };
 
   useEffect(() => {
@@ -226,12 +242,50 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
 
   // Create order details document on final submit
   const createOrderDetails = async () => {
+    // Helper to simulate binomial defects for a given n and probability p
+    const binomial = (n: number, p: number) => {
+      let count = 0;
+      for (let i = 0; i < n; i++) {
+        if (Math.random() < p) count++;
+      }
+      return count;
+    };
+
     const spendingForecast = {
       warehouseCost: Math.round(warehouseCost),
       factoryCost: Math.round(factoryCost),
       showroomCost: Math.round(showroomCost),
+      labourCost: Math.round(labourCost),
       totalSpending: Math.round(totalSpending),
     };
+
+    // Compute per-employee defects and average quality across workers
+    // Model: For each selected employee, defective = binomial(n = quantity, p = defectRate/100)
+    // per-employee quality% = (good/quantity) * 100, then average across selected employees
+    const selectedSet = new Set(selectedEmployeeIds);
+    const selectedWithRates = factoryEmployees.filter((e) =>
+      selectedSet.has(e.id)
+    );
+    const perEmployeeStats = selectedWithRates.map((e) => {
+      const p = (e.defectRate || 0) / 100;
+      const defective = quantity && p > 0 ? binomial(quantity, p) : 0;
+      const good = Math.max(0, quantity - defective);
+      const quality = quantity > 0 ? (good / quantity) * 100 : 0;
+      return { id: e.id, name: e.name, defective, good, quality };
+    });
+    const totalDefectiveUnits = perEmployeeStats.reduce(
+      (sum, r) => sum + r.defective,
+      0
+    );
+    const finalQuantityAfterDefects = Math.max(
+      0,
+      quantity - totalDefectiveUnits
+    );
+    const averageQualityAcrossWorkers = perEmployeeStats.length
+      ? perEmployeeStats.reduce((sum, r) => sum + r.quality, 0) /
+        perEmployeeStats.length
+      : 0;
+
     const payload = {
       simulationId,
       quantity,
@@ -241,6 +295,34 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
       potentialRevenue: Math.round(totalRevenue),
       spendingForecast,
     };
+    // Persist a snapshot locally for the Results page
+    try {
+      const snapshot = {
+        quantity,
+        qualityRating,
+        pricePerUnit,
+        timeToProduceWeeks: Number(timeToProduceWeeks.toFixed(1)),
+        potentialRevenue: Math.round(totalRevenue),
+        spendingForecast,
+        potentialProfit: Math.round(potentialProfit),
+        // For Results page defect calculation/display
+        selectedEmployeeIds: selectedEmployeeIds,
+        defectiveUnits: totalDefectiveUnits,
+        finalQuantity: finalQuantityAfterDefects,
+        averageQualityAcrossWorkers: Number(
+          averageQualityAcrossWorkers.toFixed(1)
+        ),
+        perEmployeeQuality: perEmployeeStats.map((r) => ({
+          id: r.id,
+          name: r.name,
+          defective: r.defective,
+          quality: Number(r.quality.toFixed(1)),
+        })),
+      };
+      window.localStorage.setItem("lastOrderDetails", JSON.stringify(snapshot));
+    } catch {
+      // ignore storage errors
+    }
     try {
       const res = await apiFetch(Endpoints.ordersCreate, {
         method: "POST",
@@ -296,11 +378,25 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
       : (25 + 45) / 2; // Basic: average of $25-$45 = $35
   const totalRevenue = quantity * averagePrice;
 
-  const warehouseCost = quantity * 43.73;
-  const factoryCost = quantity * 20.03;
-  const showroomCost = quantity * 1.4;
-  const totalSpending = warehouseCost + factoryCost + showroomCost;
-  const potentialProfit = totalRevenue - totalSpending;
+  // Warehouse cost: quantity * (pricePerUnit + 1.3 if batches selected)
+  const warehouseUnitCost =
+    pricePerUnit + (fulfillmentMethod === "batches" ? 1.3 : 0);
+  const warehouseCost = quantity * warehouseUnitCost;
+
+  // Showroom cost: sum of (quantity × per-unit cost) for each selected extra addition
+  // Add-on costs from ExtraAdditions.tsx:
+  // id "1": $0.25, id "2": $2.50, id "3": $0.50, id "4": $1.50
+  const ADD_ON_COSTS: Record<string, number> = {
+    "1": 0.25, // Shoelace protector
+    "2": 2.5, // Technology improvement
+    "3": 0.5, // Customized flag add-on
+    "4": 1.5, // Upgraded performance insole
+  };
+  const showroomCost = selectedAddOnIds.reduce((total, id) => {
+    const costPerUnit = ADD_ON_COSTS[id] ?? 0;
+    return total + quantity * costPerUnit;
+  }, 0);
+
   // ---- Production time calculation based on selected employees (One Station focus) ----
 
   // Per-hour capacity by station (sum over employees assigned to that station)
@@ -336,7 +432,7 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
     allStationsEmployeeIds,
   ]);
 
-  // Hours required per station to produce the target quantity
+  // Hours required per station to produce the target quantity (One Station mode)
   const hoursPerStation = useMemo(() => {
     return STATIONS.map((st) => {
       const perHour = perHourByStation[st];
@@ -344,18 +440,89 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
     });
   }, [perHourByStation, quantity]);
 
-  // Weeks per station (5 days * 8 hours = 40 hours/week)
+  // Weeks per station (5 days * 8 hours = 40 hours/week) for One Station mode
   const weeksPerStation = useMemo(
     () => hoursPerStation.map((h) => (h > 0 ? h / 40 : 0)),
     [hoursPerStation]
   );
 
-  // Final time is the slowest station (max weeks)
-  const timeToProduceWeeks = useMemo(() => {
+  // Final time for One Station: slowest station (max weeks)
+  const timeToProduceWeeksOne = useMemo(() => {
     const active = weeksPerStation.filter((w) => w > 0);
     if (!active.length) return 0;
     return Math.max(...active);
   }, [weeksPerStation]);
+
+  // All Stations mode: each selected employee does all steps; sum their per-employee per-hour capacity
+  // For each employee: cycleMinutes = sum of the four station minutes; perHourEmp = 60 / cycleMinutes
+  // Total per-hour = sum(perHourEmp); Hours = quantity / totalPerHour; Weeks = Hours / 40
+  const timeToProduceWeeksAll = useMemo(() => {
+    if (!allStationsEmployeeIds.length) return 0;
+    let totalPerHour = 0;
+    for (const empId of allStationsEmployeeIds) {
+      const t = factoryEmployeeTimes[empId];
+      if (!t) continue;
+      const cycle =
+        (t.preparation ?? 0) +
+        (t.assembly ?? 0) +
+        (t.completion ?? 0) +
+        (t.inspection ?? 0);
+      if (cycle > 0) totalPerHour += 60 / cycle;
+    }
+    if (totalPerHour <= 0) return 0;
+    const totalHours = quantity / totalPerHour;
+    return totalHours / 40;
+  }, [allStationsEmployeeIds, factoryEmployeeTimes, quantity]);
+
+  const timeToProduceWeeks = useMemo(
+    () =>
+      productionMode === "all" ? timeToProduceWeeksAll : timeToProduceWeeksOne,
+    [productionMode, timeToProduceWeeksAll, timeToProduceWeeksOne]
+  );
+
+  // Require all four stages to be covered before showing time output
+  const hasAllStagesCovered = useMemo(() => {
+    if (productionMode === "all") {
+      // At least one employee selected for All Stations covers all steps
+      return allStationsEmployeeIds.length > 0;
+    }
+    // One-station mode: ensure each stage has at least one assigned employee
+    const assignedStations = new Set(
+      Object.values(factoryAssignments).filter(Boolean) as Station[]
+    );
+    return STATIONS.every((st) => assignedStations.has(st));
+  }, [productionMode, allStationsEmployeeIds, factoryAssignments]);
+
+  // Factory cost: $2,000 per week × time to produce (computed after timeToProduceWeeks)
+  const FACTORY_COST_PER_WEEK = 2000;
+  const factoryCost = FACTORY_COST_PER_WEEK * timeToProduceWeeks;
+  // Labour cost: sum of selected employees' hourly rates × total hours
+  const selectedEmployeeIds = useMemo(() => {
+    if (productionMode === "all") return allStationsEmployeeIds;
+    return Object.keys(factoryAssignments).filter(
+      (id) => !!factoryAssignments[id]
+    );
+  }, [productionMode, allStationsEmployeeIds, factoryAssignments]);
+
+  const labourHourlySum = useMemo(() => {
+    if (!selectedEmployeeIds.length) return 0;
+    const set = new Set(selectedEmployeeIds);
+    return factoryEmployees
+      .filter((e) => set.has(e.id))
+      .reduce((sum, e) => sum + (e.hourlyRate || 0), 0);
+  }, [selectedEmployeeIds]);
+
+  const totalHoursUsed = useMemo(
+    () => timeToProduceWeeks * 40,
+    [timeToProduceWeeks]
+  );
+  const labourCost = useMemo(
+    () => labourHourlySum * totalHoursUsed,
+    [labourHourlySum, totalHoursUsed]
+  );
+
+  const totalSpending = warehouseCost + factoryCost + showroomCost + labourCost;
+  const potentialProfit = totalRevenue - totalSpending;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8">
@@ -688,8 +855,16 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
               />
             )}
 
-            {/* Next Button */}
-            <div className="flex justify-end">
+            {/* Navigation Buttons */}
+            <div className="flex justify-between">
+              {step > 0 && (
+                <button
+                  onClick={() => handleStepChange((step - 1) as 0 | 1 | 2)}
+                  className="px-6 py-3 bg-gradient-to-r from-slate-500 to-slate-600 text-white font-semibold rounded-xl hover:from-slate-600 hover:to-slate-700 transition-all duration-300 shadow-lg hover:shadow-xl"
+                >
+                  Back
+                </button>
+              )}
               <button
                 onClick={async () => {
                   // Persist data before moving to the next step or submit on final step
@@ -704,9 +879,9 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
                       onSubmitted?.();
                     }, 1200);
                   }
-                  setStep((prev) => (prev < 2 ? ((prev + 1) as 0 | 1 | 2) : 2));
+                  handleStepChange(step < 2 ? ((step + 1) as 0 | 1 | 2) : 2);
                 }}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-lg hover:shadow-xl"
+                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-lg hover:shadow-xl ml-auto"
               >
                 {step < 2 ? "Next" : "Submit"}
               </button>
@@ -768,9 +943,17 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
               </div>
               <div className="text-center">
                 <div className="text-4xl font-bold text-orange-600 mb-1">
-                  {timeToProduceWeeks.toFixed(1)}
+                  {hasAllStagesCovered && timeToProduceWeeks > 0
+                    ? timeToProduceWeeks.toFixed(1)
+                    : "-"}
                 </div>
-                <div className="text-slate-500">weeks</div>
+                {hasAllStagesCovered && timeToProduceWeeks > 0 ? (
+                  <div className="text-slate-500">weeks</div>
+                ) : (
+                  <div className="text-slate-500 text-sm">
+                    Select all four stages to calculate
+                  </div>
+                )}
               </div>
             </div>
 
@@ -805,7 +988,22 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Factory</span>
+                  <span className="text-slate-600">Labour</span>
+                  <span className="font-semibold text-slate-800">
+                    ${Math.round(labourCost).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <div className="flex items-center gap-1">
+                    <span className="text-slate-600">Factory</span>
+                    <div className="relative group">
+                      <Info className="h-3.5 w-3.5 text-slate-400 cursor-help" />
+                      <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 bg-slate-800 text-white text-xs rounded-lg px-3 py-2 shadow-lg z-10">
+                        $2,000/week to open the factory
+                        <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-800"></div>
+                      </div>
+                    </div>
+                  </div>
                   <span className="font-semibold text-slate-800">
                     ${Math.round(factoryCost).toLocaleString()}
                   </span>

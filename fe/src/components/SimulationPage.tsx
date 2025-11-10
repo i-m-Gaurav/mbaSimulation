@@ -1,4 +1,5 @@
-import React from "react";
+// no import for React is necessary in this setup
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { NavigationState } from "../App";
 import { WarehouseSimulation } from "./simulations/WarehouseSimulation";
@@ -18,14 +19,25 @@ export function SimulationPage({
   simulationId,
   onNavigate,
 }: SimulationPageProps) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const currentStep = parseInt(searchParams.get("step") ?? "0", 10);
+
+  // Smart back button: if inside a multi-step simulation at step > 0, go back one step
+  // Otherwise, go home
+  const handleBackClick = () => {
+    if (currentStep > 0) {
+      // Stay on the simulation page but go back one step
+      navigate(`?step=${currentStep - 1}`);
+    } else {
+      // Go home
+      onNavigate({ page: "home" });
+    }
+  };
   const renderSimulation = () => {
     switch (simulationId) {
       case "warehouse":
-        return (
-          <WarehouseSimulation
-            onSubmitted={() => onNavigate({ page: "home" })}
-          />
-        );
+        return <WarehouseSimulation onSubmitted={() => navigate("/results")} />;
       case "factory":
         return <FactorySimulation />;
       case "showroom":
@@ -61,11 +73,13 @@ export function SimulationPage({
     <div className="min-h-screen">
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6">
         <button
-          onClick={() => onNavigate({ page: "home" })}
+          onClick={handleBackClick}
           className="flex items-center space-x-2 text-slate-600 hover:text-slate-900 mb-6 transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
-          <span className="font-medium">Back to Home</span>
+          <span className="font-medium">
+            {currentStep > 0 ? "Back to Previous Step" : "Back to Home"}
+          </span>
         </button>
       </div>
 
