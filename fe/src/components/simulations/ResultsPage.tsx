@@ -1,6 +1,12 @@
-import { Info, DollarSign, Clock, TrendingUp, Target } from "lucide-react";
 import { useEffect, useState } from "react";
-import { employees as factoryEmployees } from "./data/employees";
+import { Factory } from "lucide-react";
+import { motion } from "framer-motion";
+import { MetricCard } from "./results/MetricCard";
+import { SpendingCharts } from "./results/SpendingCharts";
+import { BottleneckAnalysis } from "./results/BottleneckAnalysis";
+import { EmployeePerformance } from "./results/EmployeePerformance";
+import { PerformanceInsights } from "./results/PerformanceInsights";
+import { Package, Award, Clock, DollarSign } from "lucide-react";
 
 interface Snapshot {
   quantity: number;
@@ -16,7 +22,6 @@ interface Snapshot {
     labourCost: number;
     totalSpending: number;
   };
-  // Optional fields for defect calculation/display
   selectedEmployeeIds?: string[];
   defectiveUnits?: number;
   finalQuantity?: number;
@@ -25,243 +30,263 @@ interface Snapshot {
     id: string;
     name: string;
     defective: number;
-    quality: number; // percent
+    quality: number;
   }>;
+}
+
+interface StationData {
+  station: string;
+  time: number;
 }
 
 export function ResultsPage() {
   const [data, setData] = useState<Snapshot | null>(null);
-  const [finalQty, setFinalQty] = useState<number | null>(null);
-  const [defects, setDefects] = useState<number | null>(null);
+  const [stationData, setStationData] = useState<StationData[]>([
+    { station: "Preparation", time: 0 },
+    { station: "Assembly", time: 0 },
+    { station: "Completion", time: 0 },
+    { station: "Inspection", time: 0 },
+  ]);
 
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem("lastOrderDetails");
-      if (raw) setData(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setData(parsed);
+
+        // Initialize station data with mock times (in real scenario, this would come from FactoryProductionMethod)
+        // For now, we'll use a simple distribution based on time to produce
+        const baseTime = parsed.timeToProduceWeeks * 40; // Convert weeks to hours
+        setStationData([
+          { station: "Preparation", time: baseTime * 0.2 },
+          { station: "Assembly", time: baseTime * 0.35 },
+          { station: "Completion", time: baseTime * 0.25 },
+          { station: "Inspection", time: baseTime * 0.2 },
+        ]);
+      }
     } catch {
       setData(null);
     }
   }, []);
 
-  // Compute final quantity after defects if available or use precomputed values
-  useEffect(() => {
-    if (!data) return;
-    // If snapshot already has values, use them
-    if (
-      typeof data.finalQuantity === "number" &&
-      typeof data.defectiveUnits === "number"
-    ) {
-      setFinalQty(data.finalQuantity);
-      setDefects(data.defectiveUnits);
-      return;
-    }
-    // Otherwise, try to compute if we have selected employees
-    if (data.selectedEmployeeIds && data.selectedEmployeeIds.length) {
-      const set = new Set(data.selectedEmployeeIds);
-      const selected = factoryEmployees.filter((e) => set.has(e.id));
-      // Binomial sampler
-      const binomial = (n: number, p: number) => {
-        let count = 0;
-        for (let i = 0; i < n; i++) if (Math.random() < p) count++;
-        return count;
-      };
-      const totalDefective = selected.reduce((sum, e) => {
-        const p = (e.defectRate || 0) / 100;
-        if (!data.quantity || p <= 0) return sum;
-        return sum + binomial(data.quantity, p);
-      }, 0);
-      const fq = Math.max(0, data.quantity - totalDefective);
-      setFinalQty(fq);
-      setDefects(totalDefective);
-    } else {
-      setFinalQty(null);
-      setDefects(null);
-    }
-  }, [data]);
-
   if (!data) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Results</h2>
-          <p className="text-slate-600">
-            No results to display. Please complete a simulation.
-          </p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading results...</p>
         </div>
       </div>
     );
   }
 
+  const defectRate =
+    data.quantity > 0 ? ((data.defectiveUnits || 0) / data.quantity) * 100 : 0;
+  const profitMargin =
+    data.potentialRevenue > 0
+      ? ((data.potentialProfit / data.potentialRevenue) * 100).toFixed(1)
+      : "0";
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 grid lg:grid-cols-3 gap-8">
-        {/* Main Column (Order Details + Time) */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center mb-6">
-              <Info className="h-5 w-5 text-blue-600 mr-2" />
-              <h3 className="text-lg font-bold text-slate-800">
-                Order Details
-              </h3>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-100 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <motion.header
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="text-center mb-12"
+        >
+          <div className=" p-8 mb-8">
+            <div className="flex items-center justify-center gap-3 mb-4">
+              
+              <h1 className="text-3xl md:text-5xl font-bold text-slate-800">
+                Final Production Results
+              </h1>
             </div>
+            <p className="text-lg text-slate-600">
+              Summary of your Harvard Factory Simulation Round
+            </p>
+          </div>
+        </motion.header>
+
+        {/* Key Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <MetricCard
+            title="Total Units Produced"
+            value={
+              data.finalQuantity?.toLocaleString() ||
+              data.quantity.toLocaleString()
+            }
+            icon={Package}
+            delay={0.1}
+          />
+          <MetricCard
+            title="Production Time"
+            value={data.timeToProduceWeeks.toFixed(1)}
+            suffix=" weeks"
+            icon={Clock}
+            delay={0.2}
+          />
+          <MetricCard
+            title="Potential Revenue"
+            value={`$${Math.round(data.potentialRevenue).toLocaleString()}`}
+            icon={DollarSign}
+            delay={0.3}
+          />
+          <MetricCard
+            title="Profit Margin"
+            value={profitMargin}
+            suffix="%"
+            icon={Award}
+            delay={0.4}
+          />
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid lg:grid-cols-3 gap-8 mb-8">
+          {/* Left Column - Spending Charts */}
+          <div className="lg:col-span-2 space-y-8">
+            <SpendingCharts
+              spendingForecast={data.spendingForecast}
+              potentialRevenue={data.potentialRevenue}
+              potentialProfit={data.potentialProfit}
+            />
+          </div>
+
+          {/* Right Column - Order Summary */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6, delay: 0.5 }}
+            className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl p-6"
+          >
+            <h3 className="text-xl font-bold text-slate-800 mb-6">
+              Order Summary
+            </h3>
             <div className="space-y-4">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Initial Quantity</span>
-                <span className="font-semibold text-slate-800">
+              <div className="bg-slate-50 rounded-lg p-4">
+                <p className="text-sm text-slate-600 mb-1">Initial Quantity</p>
+                <p className="text-2xl font-bold text-slate-800">
                   {data.quantity.toLocaleString()} units
-                </span>
+                </p>
               </div>
-              {finalQty !== null && defects !== null && (
+
+              {data.defectiveUnits && data.defectiveUnits > 0 && (
                 <>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Defective Units</span>
-                    <span className="font-semibold text-red-600">
-                      {defects.toLocaleString()}
-                    </span>
+                  <div className="bg-red-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-600 mb-1">
+                      Defective Units
+                    </p>
+                    <p className="text-2xl font-bold text-red-600">
+                      {data.defectiveUnits.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-red-500 mt-1">
+                      {defectRate.toFixed(1)}% defect rate
+                    </p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Final Quantity</span>
-                    <span className="font-bold text-slate-900">
-                      {finalQty.toLocaleString()} units
-                    </span>
+
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-600 mb-1">
+                      Final Quantity
+                    </p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {data.finalQuantity?.toLocaleString()} units
+                    </p>
                   </div>
                 </>
               )}
-              <div className="flex justify-between">
-                <span className="text-slate-600">Quality</span>
-                <span className="font-semibold text-slate-800">
+
+              <div className="bg-blue-50 rounded-lg p-4">
+                <p className="text-sm text-slate-600 mb-1">Quality Rating</p>
+                <p className="text-2xl font-bold text-blue-600">
                   {data.qualityRating >= 70 ? "Premium" : "Basic"}
-                </span>
+                </p>
+                <p className="text-xs text-blue-500 mt-1">
+                  Rating: {data.qualityRating}
+                </p>
               </div>
-              {typeof data.averageQualityAcrossWorkers === "number" && (
-                <div className="flex justify-between">
-                  <span className="text-slate-600">
-                    Average Quality Across Workers
-                  </span>
-                  <span className="font-semibold text-slate-800">
+
+              {data.averageQualityAcrossWorkers !== undefined && (
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-sm text-slate-600 mb-1">
+                    Average Worker Quality
+                  </p>
+                  <p className="text-2xl font-bold text-purple-600">
                     {data.averageQualityAcrossWorkers.toFixed(1)}%
-                  </span>
+                  </p>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-slate-600">Unit Price (selected)</span>
-                <span className="font-semibold text-slate-800">
-                  ${data.pricePerUnit.toFixed(2)}
-                </span>
+
+              <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-4 border border-indigo-200">
+                <p className="text-sm text-slate-600 mb-1">Potential Profit</p>
+                <p className="text-2xl font-bold text-indigo-600">
+                  ${Math.round(data.potentialProfit).toLocaleString()}
+                </p>
+                <p className="text-xs text-indigo-500 mt-1">
+                  {profitMargin}% margin
+                </p>
               </div>
             </div>
+          </motion.div>
+        </div>
+
+        {/* Performance Analysis */}
+        <div className="grid lg:grid-cols-3 gap-8 mb-8">
+          {/* Bottleneck Analysis */}
+          <div className="lg:col-span-2">
+            <BottleneckAnalysis stationData={stationData} />
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center mb-4">
-              <Clock className="h-5 w-5 text-orange-600 mr-2" />
-              <h3 className="text-lg font-bold text-slate-800">
-                Time to Produce
-              </h3>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl font-bold text-orange-600 mb-1">
-                {data.timeToProduceWeeks.toFixed(1)}
-              </div>
-              <div className="text-slate-500">weeks</div>
-            </div>
+          {/* Performance Insights - Right Sidebar */}
+          <div>
+            <PerformanceInsights
+              perEmployeeQuality={data.perEmployeeQuality || []}
+              averageQualityAcrossWorkers={
+                data.averageQualityAcrossWorkers || 0
+              }
+              bottleneckStation={
+                stationData.length > 0
+                  ? stationData.reduce((max, current) =>
+                      current.time > max.time ? current : max
+                    ).station
+                  : undefined
+              }
+              defectiveUnits={data.defectiveUnits}
+              quantity={data.quantity}
+            />
           </div>
         </div>
 
-        {/* Sidebar (Financials) */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center mb-4">
-              <DollarSign className="h-5 w-5 text-green-600 mr-2" />
-              <h3 className="text-lg font-bold text-slate-800">
-                Potential Revenue
-              </h3>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-green-600">
-                ${Math.round(data.potentialRevenue).toLocaleString()}
-              </div>
-            </div>
-          </div>
+        {/* Employee Performance */}
+        {data.perEmployeeQuality && data.perEmployeeQuality.length > 0 && (
+          <EmployeePerformance perEmployeeQuality={data.perEmployeeQuality} />
+        )}
 
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-            <div className="flex items-center mb-6">
-              <TrendingUp className="h-5 w-5 text-slate-600 mr-2" />
-              <h3 className="text-lg font-bold text-slate-800">
-                Spending Forecast
-              </h3>
-            </div>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Warehouse</span>
-                <span className="font-semibold text-slate-800">
-                  $
-                  {Math.round(
-                    data.spendingForecast.warehouseCost
-                  ).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Labour</span>
-                <span className="font-semibold text-slate-800">
-                  $
-                  {Math.round(
-                    data.spendingForecast.labourCost
-                  ).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Factory</span>
-                <span className="font-semibold text-slate-800">
-                  $
-                  {Math.round(
-                    data.spendingForecast.factoryCost
-                  ).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Showroom</span>
-                <span className="font-semibold text-slate-800">
-                  $
-                  {Math.round(
-                    data.spendingForecast.showroomCost
-                  ).toLocaleString()}
-                </span>
-              </div>
-              <div className="border-t border-slate-200 pt-3">
-                <div className="flex justify-between">
-                  <span className="font-semibold text-slate-800">Total</span>
-                  <span className="font-bold text-slate-800">
-                    $
-                    {Math.round(
-                      data.spendingForecast.totalSpending
-                    ).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-6">
-            <div className="flex items-center mb-4">
-              <Target className="h-5 w-5 text-blue-600 mr-2" />
-              <h3 className="text-lg font-bold text-slate-800">
-                Potential Profit
-              </h3>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600 mb-2">
-                ${Math.round(data.potentialProfit).toLocaleString()}
-              </div>
-              <div className="text-slate-600 text-sm">
-                {((data.potentialProfit / data.potentialRevenue) * 100).toFixed(
-                  1
-                )}
-                % margin
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Action Buttons */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 1.2 }}
+          className="flex justify-center gap-4 mt-12"
+        >
+          <button
+            onClick={() => {
+              window.localStorage.removeItem("lastOrderDetails");
+              window.location.href = "/";
+            }}
+            className="px-8 py-3 bg-gradient-to-r from-slate-600 to-slate-700 text-white font-semibold rounded-xl hover:from-slate-700 hover:to-slate-800 transition-all duration-300 shadow-lg hover:shadow-xl"
+          >
+            Return to Dashboard
+          </button>
+          <button
+            onClick={() => (window.location.href = "/warehouse")}
+            className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 shadow-lg hover:shadow-xl"
+          >
+            Run Another Simulation
+          </button>
+        </motion.div>
       </div>
     </div>
   );
