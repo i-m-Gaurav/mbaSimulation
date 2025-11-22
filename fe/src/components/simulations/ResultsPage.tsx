@@ -222,7 +222,7 @@ export function ResultsPage() {
               )}
 
               <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-4 border border-indigo-200">
-                <p className="text-sm text-slate-600 mb-1">Potential Profit</p>
+                <p className="text-sm text-slate-600 mb-1">Actual Profit</p>
                 <p className="text-2xl font-bold text-indigo-600">
                   ${Math.round(data.potentialProfit).toLocaleString()}
                 </p>

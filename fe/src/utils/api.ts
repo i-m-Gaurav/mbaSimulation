@@ -1,5 +1,6 @@
 // Simple API helper using fetch
-const BASE_URL = "https://mba-simulation-kgwv.vercel.app";
+// const BASE_URL = "https://mba-simulation-kgwv.vercel.app";
+const BASE_URL = "http://localhost:5000";
 
 export interface ApiResponse<T> {
   data?: T;
@@ -52,5 +53,6 @@ export const Endpoints = {
   configGet: "/api/config/getConfig",
   simulationCreate: "/api/simulations",
   simulationUpdate: "/api/simulations/",
+  simulationGet: "/api/simulations/",
   ordersCreate: "/api/orders",
 } as const;
