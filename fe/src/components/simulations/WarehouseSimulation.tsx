@@ -463,10 +463,31 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   const pricePerUnit = PRICE_STOPS[priceIndex];
 
   // Calculate total revenue based on quality tier average price
-  const averagePrice =
+  // Base average price before showroom additions
+  const baseAveragePrice =
     qualityRating >= 70
       ? (80 + 100) / 2 // Premium: average of $80-$100 = $90
       : (25 + 45) / 2; // Basic: average of $25-$45 = $35
+  
+  // Apply cumulative percentage increases from selected showroom add-ons
+  // Add-on percentages in order: [7%, 5%, 7%, 7%] for ids ["1", "2", "3", "4"]
+  const ADD_ON_PERCENTAGES: Record<string, number> = {
+    "1": 0.07, // Shoelace protector: 7%
+    "2": 0.05, // Technology improvement: 5%
+    "3": 0.07, // Customized flag add-on: 7%
+    "4": 0.07, // Upgraded performance insole: 7%
+  };
+  
+  // Calculate cumulative price increase from selected add-ons
+  // Each percentage is applied to the running price (compounding)
+  let averagePrice = baseAveragePrice;
+  for (const id of selectedAddOnIds) {
+    const percentage = ADD_ON_PERCENTAGES[id];
+    if (percentage) {
+      averagePrice = averagePrice * (1 + percentage);
+    }
+  }
+  
   const totalRevenue = quantity * averagePrice;
 
   // Warehouse cost: quantity * (pricePerUnit + 1.3 if batches selected)
