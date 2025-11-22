@@ -74,6 +74,8 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
     );
   };
   const [showSubmittedModal, setShowSubmittedModal] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const fetchConfig = async () => {
     const res = await apiFetch<ConfigSettings>(Endpoints.configGet);
@@ -113,13 +115,102 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
     setSearchParams({ step: newStep.toString() });
   };
 
-  useEffect(() => {
+  // Load saved simulation data from backend
+  const loadSimulationData = async (simId: string) => {
     try {
-      fetchConfig();
-    } catch (error) {
-      console.error("Error fetching config:", error);
+      const res = await apiFetch<{
+        warehouseData?: {
+          quantity?: number;
+          qualityRating?: number;
+          additionalOption?: string;
+          deliveryMethod?: string;
+          fulfillmentMethod?: string;
+          addBuffer?: boolean;
+        };
+        factoryData?: {
+          productionMode?: "one" | "all";
+          assignments?: Record<string, Station | null>;
+          allStationsEmployeeIds?: string[];
+        };
+        extraAdditions?: {
+          selectedAddOnIds?: string[];
+        };
+        factoryEmployeeTimes?: Record<string, Partial<Record<Station, number>>>;
+      }>(Endpoints.simulationGet + simId);
+      if (res.data) {
+        const sim = res.data;
+        
+        // Restore warehouse data
+        if (sim.warehouseData) {
+          const wd = sim.warehouseData;
+          if (wd.quantity !== undefined) setQuantity(wd.quantity);
+          if (wd.qualityRating !== undefined) setQualityRating(wd.qualityRating);
+          if (wd.additionalOption !== undefined) setAdditionalOption(wd.additionalOption);
+          if (wd.deliveryMethod !== undefined) setDeliveryMethod(wd.deliveryMethod);
+          if (wd.fulfillmentMethod !== undefined) setFulfillmentMethod(wd.fulfillmentMethod);
+          if (wd.addBuffer !== undefined) setAddBuffer(wd.addBuffer);
+        }
+        
+        // Restore factory data
+        if (sim.factoryData) {
+          const fd = sim.factoryData;
+          if (fd.productionMode !== undefined) setProductionMode(fd.productionMode);
+          if (fd.assignments !== undefined) setFactoryAssignments(fd.assignments);
+          if (fd.allStationsEmployeeIds !== undefined) setAllStationsEmployeeIds(fd.allStationsEmployeeIds);
+        }
+        
+        // Restore factory employee times
+        if (sim.factoryEmployeeTimes) {
+          setFactoryEmployeeTimes(sim.factoryEmployeeTimes);
+        }
+        
+        // Restore extra additions
+        if (sim.extraAdditions) {
+          const ea = sim.extraAdditions;
+          if (ea.selectedAddOnIds !== undefined) setSelectedAddOnIds(ea.selectedAddOnIds);
+        }
+        
+        // Mark data as loaded to trigger recalculation
+        setIsDataLoaded(true);
+        
+        console.log("Loaded simulation data from backend", simId);
+      }
+    } catch (err) {
+      console.error("Error loading simulation data", err);
     }
+  };
+
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        setIsLoading(true);
+        await fetchConfig();
+        
+        // Load existing simulation data if we have a simulationId
+        if (simulationId) {
+          await loadSimulationData(simulationId);
+        }
+      } catch (error) {
+        console.error("Error fetching config:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    initializeData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Force recalculation of factory times when data is loaded
+  useEffect(() => {
+    if (isDataLoaded && Object.keys(factoryEmployeeTimes).length > 0) {
+      // Times are already loaded, just ensure they're set
+      console.log("Factory times restored:", factoryEmployeeTimes);
+      console.log("Factory assignments:", factoryAssignments);
+      console.log("Production mode:", productionMode);
+      console.log("All stations employee IDs:", allStationsEmployeeIds);
+    }
+  }, [isDataLoaded, factoryEmployeeTimes, factoryAssignments, productionMode, allStationsEmployeeIds]);
 
   // Save warehouse data to backend (create or update a simulation)
   const saveWarehouse = async () => {
@@ -178,7 +269,7 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
           Endpoints.simulationCreate,
           {
             method: "POST",
-            body: JSON.stringify({ factoryData }),
+            body: JSON.stringify({ factoryData, factoryEmployeeTimes }),
           }
         );
         if (res.data && (res.data as unknown as { _id?: string })._id) {
@@ -192,7 +283,7 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
       } else {
         const res = await apiFetch(Endpoints.simulationUpdate + simulationId, {
           method: "PUT",
-          body: JSON.stringify({ factoryData }),
+          body: JSON.stringify({ factoryData, factoryEmployeeTimes }),
         });
         if (res.error) console.error("Failed updating factory data", res.error);
         else console.log("Updated factory data for simulation", simulationId);
@@ -408,11 +499,15 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
       inspection: 0,
     };
 
+    console.log("Calculating perHourByStation with factoryEmployeeTimes:", factoryEmployeeTimes);
+    console.log("Production mode:", productionMode);
+
     if (productionMode === "one") {
       for (const empId of Object.keys(factoryEmployeeTimes)) {
         const st = factoryAssignments[empId];
         if (!st) continue;
         const minutes = factoryEmployeeTimes[empId]?.[st];
+        console.log(`Employee ${empId} at station ${st}: ${minutes} minutes`);
         if (minutes && minutes > 0) acc[st] += 60 / minutes;
       }
     } else {
@@ -424,6 +519,7 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
         }
       }
     }
+    console.log("Calculated perHourByStation:", acc);
     return acc;
   }, [
     factoryEmployeeTimes,
@@ -523,6 +619,18 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
 
   const totalSpending = warehouseCost + factoryCost + showroomCost + labourCost;
   const potentialProfit = totalRevenue - totalSpending;
+
+  // Show loading state while data is being fetched
+  if (isLoading && simulationId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading simulation data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8">
@@ -832,6 +940,7 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
 
             {step === 1 && (
               <FactoryProductionMethod
+                key={isDataLoaded ? "loaded" : "initial"}
                 assignments={factoryAssignments}
                 onChange={setFactoryAssignments}
                 productionMode={productionMode}

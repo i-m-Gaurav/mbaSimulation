@@ -14,6 +14,7 @@ const simulationSchema = new mongoose.Schema({
   warehouseData: { type: warehouseSchema, default: {} },
   factoryData: { type: mongoose.Schema.Types.Mixed, default: {} },
   extraAdditions: { type: mongoose.Schema.Types.Mixed, default: {} },
+  factoryEmployeeTimes: { type: mongoose.Schema.Types.Mixed, default: {} },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

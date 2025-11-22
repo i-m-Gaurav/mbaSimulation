@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import  { useState } from 'react';
 import { ArrowLeft, Play, BookOpen, Clock, CheckCircle, Lock } from 'lucide-react';
 import { NavigationState } from '../App';
 
@@ -12,7 +12,7 @@ export function ConceptPage({ conceptId, subjectId, onNavigate }: ConceptPagePro
   const [activeTab, setActiveTab] = useState<'videos' | 'simulations'>('videos');
   const [completedVideos, setCompletedVideos] = useState<string[]>([]);
 
-  const conceptData: Record<string, any> = {
+  const conceptData: Record<string , object> = {
     'supply-chain': {
       title: 'Supply Chain Management',
       description: 'Master the complexities of modern supply chain operations through comprehensive video lessons and hands-on simulations.',
@@ -314,7 +314,7 @@ export function ConceptPage({ conceptId, subjectId, onNavigate }: ConceptPagePro
           </button>
 
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-            <h1 className="text-4xl font-bold text-slate-800 mb-4">{concept.title}</h1>
+            <h1 className="text-4xl font-bold text-slate-800 mb-4">{concept.title} </h1>
             <p className="text-xl text-slate-600 leading-relaxed">{concept.description}</p>
           </div>
         </div>
@@ -470,7 +470,12 @@ export function ConceptPage({ conceptId, subjectId, onNavigate }: ConceptPagePro
                         <div>
                           {simulation.unlocked ? (
                             <button
-                              onClick={() => onNavigate({ page: 'simulation', simulationId: simulation.id as any })}
+                              onClick={() => {
+                                // Clear any existing simulation data when starting a new simulation
+                                window.localStorage.removeItem("simulationId");
+                                window.localStorage.removeItem("lastOrderDetails");
+                                onNavigate({ page: 'simulation', simulationId: simulation.id as any });
+                              }}
                               className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-lg hover:shadow-xl"
                             >
                               Start Simulation

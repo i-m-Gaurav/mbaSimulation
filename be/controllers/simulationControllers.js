@@ -23,6 +23,8 @@ export const updateSimulation = async (req, res) => {
     if (req.body.factoryData) update.factoryData = req.body.factoryData;
     if (req.body.extraAdditions)
       update.extraAdditions = req.body.extraAdditions;
+    if (req.body.factoryEmployeeTimes)
+      update.factoryEmployeeTimes = req.body.factoryEmployeeTimes;
     update.updatedAt = Date.now();
 
     const sim = await Simulation.findByIdAndUpdate(

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Factory } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+// import { Factory } from "lucide-react";
 import { motion } from "framer-motion";
 import { MetricCard } from "./results/MetricCard";
 import { SpendingCharts } from "./results/SpendingCharts";
@@ -40,6 +41,7 @@ interface StationData {
 }
 
 export function ResultsPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<Snapshot | null>(null);
   const [stationData, setStationData] = useState<StationData[]>([
     { station: "Preparation", time: 0 },
@@ -273,18 +275,41 @@ export function ResultsPage() {
         >
           <button
             onClick={() => {
+              // Clear simulation data and go home
               window.localStorage.removeItem("lastOrderDetails");
-              window.location.href = "/";
+              window.localStorage.removeItem("simulationId");
+              navigate("/");
             }}
             className="px-8 py-3 bg-gradient-to-r from-slate-600 to-slate-700 text-white font-semibold rounded-xl hover:from-slate-700 hover:to-slate-800 transition-all duration-300 shadow-lg hover:shadow-xl"
           >
             Return to Dashboard
           </button>
           <button
-            onClick={() => (window.location.href = "/warehouse")}
+            onClick={() => {
+              // Go back to the warehouse simulation with the existing simulation ID preserved
+              const simId = window.localStorage.getItem("simulationId");
+              if (simId) {
+                navigate("/simulation/warehouse?step=0");
+              } else {
+                // If no simulation ID, start fresh
+                window.localStorage.removeItem("lastOrderDetails");
+                navigate("/simulation/warehouse?step=0");
+              }
+            }}
             className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 shadow-lg hover:shadow-xl"
           >
-            Run Another Simulation
+            Back to Simulation
+          </button>
+          <button
+            onClick={() => {
+              // Start a completely new simulation
+              window.localStorage.removeItem("lastOrderDetails");
+              window.localStorage.removeItem("simulationId");
+              navigate("/simulation/warehouse?step=0");
+            }}
+            className="px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white font-semibold rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-300 shadow-lg hover:shadow-xl"
+          >
+            Start New Simulation
           </button>
         </motion.div>
       </div>
