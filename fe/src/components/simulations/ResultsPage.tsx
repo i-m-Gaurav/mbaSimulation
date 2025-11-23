@@ -27,6 +27,7 @@ interface Snapshot {
   defectiveUnits?: number;
   finalQuantity?: number;
   averageQualityAcrossWorkers?: number;
+  priceMultiplier?: number;
   perEmployeeQuality?: Array<{
     id: string;
     name: string;
@@ -85,9 +86,39 @@ export function ResultsPage() {
 
   const defectRate =
     data.quantity > 0 ? ((data.defectiveUnits || 0) / data.quantity) * 100 : 0;
+
+  // Calculate effective quality based on worker performance
+  const effectiveQuality =
+    data.qualityRating * ((data.averageQualityAcrossWorkers || 100) / 100);
+
+  // Calculate selling price based on effective quality
+  // Basic: Quality [10, 70) -> Price [25, 45]
+  // Premium: Quality [70, 100] -> Price [80, 100]
+  let baseSellingPrice = 0;
+  if (effectiveQuality < 70) {
+    // Interpolate between 10 and 70 for price 25 to 45
+    // Slope = (45 - 25) / (70 - 10) = 20 / 60 = 1/3
+    // Price = 25 + (Quality - 10) * (1/3)
+    // Clamp quality to min 10 just in case
+    const q = Math.max(10, effectiveQuality);
+    baseSellingPrice = 25 + (q - 10) * (1 / 3);
+  } else {
+    // Interpolate between 70 and 100 for price 80 to 100
+    // Slope = (100 - 80) / (100 - 70) = 20 / 30 = 2/3
+    // Price = 80 + (Quality - 70) * (2/3)
+    baseSellingPrice = 80 + (effectiveQuality - 70) * (2 / 3);
+  }
+
+  // Apply showroom multiplier
+  const finalSellingPrice = baseSellingPrice * (data.priceMultiplier || 1);
+
+  // Recalculate revenue and profit
+  const actualRevenue = data.quantity * finalSellingPrice;
+  const actualProfit = actualRevenue - data.spendingForecast.totalSpending;
+
   const profitMargin =
-    data.potentialRevenue > 0
-      ? ((data.potentialProfit / data.potentialRevenue) * 100).toFixed(1)
+    actualRevenue > 0
+      ? ((actualProfit / actualRevenue) * 100).toFixed(1)
       : "0";
 
   return (
@@ -132,8 +163,8 @@ export function ResultsPage() {
             delay={0.2}
           />
           <MetricCard
-            title="Potential Revenue"
-            value={`$${Math.round(data.potentialRevenue).toLocaleString()}`}
+            title="Revenue"
+            value={`$${Math.round(actualRevenue).toLocaleString()}`}
             icon={DollarSign}
             delay={0.3}
           />
@@ -152,8 +183,8 @@ export function ResultsPage() {
           <div className="lg:col-span-2 space-y-8">
             <SpendingCharts
               spendingForecast={data.spendingForecast}
-              potentialRevenue={data.potentialRevenue}
-              potentialProfit={data.potentialProfit}
+              potentialRevenue={actualRevenue}
+              potentialProfit={actualProfit}
             />
           </div>
 
@@ -203,10 +234,10 @@ export function ResultsPage() {
               <div className="bg-blue-50 rounded-lg p-4">
                 <p className="text-sm text-slate-600 mb-1">Quality Rating</p>
                 <p className="text-2xl font-bold text-blue-600">
-                  {data.qualityRating >= 70 ? "Premium" : "Basic"}
+                  {effectiveQuality >= 70 ? "Premium" : "Basic"}
                 </p>
                 <p className="text-xs text-blue-500 mt-1">
-                  Rating: {data.qualityRating}
+                  Rating: {effectiveQuality.toFixed(1)} (was {data.qualityRating})
                 </p>
               </div>
 
@@ -224,10 +255,20 @@ export function ResultsPage() {
               <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-4 border border-indigo-200">
                 <p className="text-sm text-slate-600 mb-1">Actual Profit</p>
                 <p className="text-2xl font-bold text-indigo-600">
-                  ${Math.round(data.potentialProfit).toLocaleString()}
+                  ${Math.round(actualProfit).toLocaleString()}
                 </p>
                 <p className="text-xs text-indigo-500 mt-1">
                   {profitMargin}% margin
+                </p>
+              </div>
+
+              <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                <p className="text-sm text-slate-600 mb-1">Selling Price</p>
+                <p className="text-2xl font-bold text-emerald-600">
+                  ${finalSellingPrice.toFixed(2)}
+                </p>
+                <p className="text-xs text-emerald-500 mt-1">
+                  per unit
                 </p>
               </div>
             </div>

@@ -403,6 +403,7 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
         averageQualityAcrossWorkers: Number(
           averageQualityAcrossWorkers.toFixed(1)
         ),
+        priceMultiplier: priceMultiplier,
         perEmployeeQuality: perEmployeeStats.map((r) => ({
           id: r.id,
           name: r.name,
@@ -481,9 +482,11 @@ export function WarehouseSimulation({ onSubmitted }: WarehouseSimulationProps) {
   // Calculate cumulative price increase from selected add-ons
   // Each percentage is applied to the running price (compounding)
   let averagePrice = baseAveragePrice;
+  let priceMultiplier = 1;
   for (const id of selectedAddOnIds) {
     const percentage = ADD_ON_PERCENTAGES[id];
     if (percentage) {
+      priceMultiplier = priceMultiplier * (1 + percentage);
       averagePrice = averagePrice * (1 + percentage);
     }
   }
