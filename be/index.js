@@ -12,7 +12,12 @@ const PORT = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: "http://localhost:5173", // your React app URL
+    origin:[
+      "http://localhost:5173",
+      "https://mba-simulation.vercel.app/"
+
+    ],
+    
 
     credentials: true, // if you send cookies/auth headers
   })
