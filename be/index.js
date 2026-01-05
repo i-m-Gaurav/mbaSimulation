@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://mba-simulation-kgwv.vercel.app"],
+    origin: ["http://localhost:5173", "https://mba-simulation.vercel.app"],
     credentials: true,
   })
 );
